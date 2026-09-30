@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "haulerbot"
+version = "0.1.0"
+description = "LinkedIn outreach for garbage haulers, pitching the abandoned-cart follow-up bot"
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=1.10",
+    "playwright>=1.45",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+haulerbot = "haulerbot.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["haulerbot*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
