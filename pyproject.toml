@@ -9,6 +9,7 @@ description = "LinkedIn outreach for garbage haulers, pitching the abandoned-car
 requires-python = ">=3.10"
 dependencies = [
     "anthropic>=1.10",
+    "openpyxl>=3.1",
     "playwright>=1.45",
 ]
 
