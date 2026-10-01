@@ -19,7 +19,8 @@ class Throttle:
 
     def _cap(self, kind: str) -> int:
         return {"invite": self.settings.max_invites_per_day,
-                "message": self.settings.max_messages_per_day}[kind]
+                "message": self.settings.max_messages_per_day,
+                "search": self.settings.max_searches_per_day}[kind]
 
     def used_today(self, kind: str) -> int:
         # Rolling 24 hours, so a run just after midnight can't double the daily volume.

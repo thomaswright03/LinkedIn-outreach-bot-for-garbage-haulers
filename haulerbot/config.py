@@ -46,6 +46,11 @@ class Settings:
     followup_after_days: int = 5
     reply_mode: str = "draft"  # "draft" or "auto"
     model: str = "claude-opus-5-5"
+    demo_with: str = "Max Garrett"
+    booking_link: str = ""
+    contact_priorities: tuple[str, ...] = ("A", "B")
+    max_searches_per_day: int = 30
+    generic_search: bool = True
     headless: bool = False
     extra: dict = field(default_factory=dict)
 
@@ -76,6 +81,14 @@ class Settings:
             followup_after_days=_int("HAULERBOT_FOLLOWUP_AFTER_DAYS", 5),
             reply_mode=reply_mode,
             model=os.environ.get("HAULERBOT_MODEL", "claude-opus-5-5"),
+            demo_with=os.environ.get("HAULERBOT_DEMO_WITH", "Max Garrett"),
+            booking_link=os.environ.get("HAULERBOT_BOOKING_LINK", ""),
+            contact_priorities=tuple(
+                x.strip().upper() for x in
+                os.environ.get("HAULERBOT_CONTACT_PRIORITIES", "A,B").split(",") if x.strip()),
+            max_searches_per_day=_int("HAULERBOT_MAX_SEARCHES_PER_DAY", 30),
+            generic_search=os.environ.get("HAULERBOT_GENERIC_SEARCH", "1").lower()
+            not in ("0", "false", "no"),
             headless=os.environ.get("HAULERBOT_HEADLESS", "").lower() in ("1", "true", "yes"),
         )
         if s.min_delay > s.max_delay:

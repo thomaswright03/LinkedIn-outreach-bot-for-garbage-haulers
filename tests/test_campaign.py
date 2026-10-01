@@ -124,7 +124,7 @@ def test_followup_then_no_reply(db, settings, throttle, prospect):
 
 def test_auto_mode_queues_reply_for_sending(db, settings, throttle, prospect, monkeypatch):
     settings.reply_mode = "auto"
-    monkeypatch.setattr(campaign, "draft_reply", lambda p, h, s: ("Great, does Tuesday work?", False))
+    monkeypatch.setattr(campaign, "draft_reply", lambda p, h, s, **kw: ("Great, does Tuesday work?", False))
     li = FakeLinkedIn()
     li.inbox = [InboxMessage(prospect["profile_url"], "Jane Doe", "Tell me more")]
     campaign.poll_inbox(None, db, settings, li)

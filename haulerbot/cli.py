@@ -12,7 +12,8 @@ from .browser import NeedsLogin, ensure_logged_in, interactive_login, open_conte
 from .config import Settings
 from .db import DB, STATUSES
 from .ratelimit import Throttle
-from .report import dashboard, export_csv
+from .report import dashboard, export_companies_csv, export_csv
+from .seed import import_seed
 
 
 @contextmanager
@@ -27,10 +28,66 @@ def cmd_login(s, db, args):
     return 0 if interactive_login(s) else 1
 
 
+def cmd_import(s, db, args):
+    r = import_seed(db, args.path)
+    print(f"Imported from sheets: {', '.join(r.sheets) or 'none found'}")
+    print(f"  companies: {r.companies}")
+    print(f"  contacts: {r.contacts} ({r.contacts_with_linkedin} with a LinkedIn profile)")
+    if r.unverified_emails:
+        print(f"  emails kept as unverified (no explicit verification in the sheet): "
+              f"{r.unverified_emails}")
+    if r.skipped_rows:
+        print(f"  rows skipped (no company name): {r.skipped_rows}")
+    if not r.sheets:
+        print("No sheet had a 'Company' column; nothing imported.")
+        return 1
+
+
+def cmd_companies(s, db, args):
+    rows = db.companies(priorities=tuple(args.tier) if args.tier else None)
+    for c in rows:
+        contacts = db.contacts_of(c["id"])
+        reachable = sum(1 for p in contacts if p["profile_url"])
+        demo = f"  DEMO {c['demo_date'] or 'booked'}" if c["demo_booked"] else ""
+        print(f"[{c['priority'] or '-'}] #{c['id']:<4} {c['name']:<40} Soft-Pak: "
+              f"{c['softpak_status'] or '?':<10} contacts: {len(contacts)} "
+              f"({reachable} on LinkedIn){demo}")
+
+
+def cmd_find_profiles(s, db, args):
+    with _live(s) as page:
+        t = Throttle(db, s)
+        print(json.dumps({
+            "profiles": campaign.find_profiles(page, db, s, throttle=t, limit=args.limit),
+            "enriched": campaign.enrich_companies(page, db, s, throttle=t),
+        }, indent=2))
+
+
+def cmd_set_profile(s, db, args):
+    from .discovery import canonical_profile_url
+    url = canonical_profile_url(args.url)
+    if not url or not db.set_profile(args.prospect_id, url):
+        print("not a LinkedIn profile URL, or it already belongs to another prospect")
+        return 1
+    db.clear_human_flag(args.prospect_id)
+    print("ok")
+
+
+def cmd_demo(s, db, args):
+    p = db.get(args.prospect_id)
+    if not p:
+        print("no such prospect")
+        return 1
+    db.book_demo(p["id"], args.date)
+    print(f"Demo booked: {p['full_name']} ({p['company']}) on {args.date}. "
+          f"Automated follow-ups to them have stopped.")
+
+
 def cmd_discover(s, db, args):
     queries = args.query or campaign.DEFAULT_QUERIES
     with _live(s) as page:
-        print(json.dumps(campaign.discover(page, db, queries, args.pages), indent=2))
+        print(json.dumps(campaign.discover(page, db, queries, args.pages,
+                                           throttle=Throttle(db, s)), indent=2))
 
 
 def cmd_invite(s, db, args):
@@ -134,6 +191,8 @@ def cmd_status(s, db, args):
 def cmd_export(s, db, args):
     n = export_csv(db, args.out)
     print(f"wrote {n} prospects to {args.out}")
+    n = export_companies_csv(db, args.companies_out)
+    print(f"wrote {n} companies (master database layout) to {args.companies_out}")
 
 
 def cmd_pause(s, db, args):
@@ -152,7 +211,30 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("login", help="open a browser and sign in to LinkedIn by hand").set_defaults(fn=cmd_login)
 
-    d = sub.add_parser("discover", help="search LinkedIn for hauler decision-makers")
+    im = sub.add_parser("import", help="import the Soft-Pak seed workbook (.xlsx or .csv)")
+    im.add_argument("path")
+    im.set_defaults(fn=cmd_import)
+
+    co = sub.add_parser("companies", help="list seeded companies by priority")
+    co.add_argument("--tier", action="append", choices=("A", "B", "C"))
+    co.set_defaults(fn=cmd_companies)
+
+    fp = sub.add_parser("find-profiles",
+                        help="find LinkedIn profiles for seeded contacts and companies")
+    fp.add_argument("--limit", type=int, default=20)
+    fp.set_defaults(fn=cmd_find_profiles)
+
+    sp = sub.add_parser("set-profile", help="attach a LinkedIn profile URL to a contact by hand")
+    sp.add_argument("prospect_id", type=int)
+    sp.add_argument("url")
+    sp.set_defaults(fn=cmd_set_profile)
+
+    dm = sub.add_parser("demo", help="record a booked demo with Max")
+    dm.add_argument("prospect_id", type=int)
+    dm.add_argument("date", help="e.g. 2026-10-08 2pm CT")
+    dm.set_defaults(fn=cmd_demo)
+
+    d = sub.add_parser("discover", help="generic LinkedIn search for hauler decision-makers")
     d.add_argument("--query", action="append", help="search keywords (repeatable)")
     d.add_argument("--pages", type=int, default=2, help="result pages per query")
     d.set_defaults(fn=cmd_discover)
@@ -189,6 +271,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     e = sub.add_parser("export", help="export prospects and outcomes to CSV")
     e.add_argument("--out", default="exports/prospects.csv")
+    e.add_argument("--companies-out", default="exports/companies.csv")
     e.set_defaults(fn=cmd_export)
 
     sub.add_parser("pause", help="stop all outbound activity").set_defaults(fn=cmd_pause)

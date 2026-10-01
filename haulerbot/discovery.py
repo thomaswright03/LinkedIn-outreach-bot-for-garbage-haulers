@@ -149,6 +149,54 @@ _EXTRACT_JS = r"""
 """
 
 
+# --- seeded companies (Soft-Pak workbook) -----------------------------------
+
+_NAME_NOISE = re.compile(r"[\(\[].*?[\)\]]|,.*$|[^a-z\s'-]", re.I)
+_COMPANY_STOPWORDS = {"inc", "llc", "co", "corp", "company", "the", "and", "of", "services",
+                      "service", "group", "ltd"}
+
+
+def _name_tokens(name: str) -> list[str]:
+    return [t for t in _NAME_NOISE.sub(" ", name.lower()).split() if len(t) > 1 or t.isalpha()]
+
+
+def same_person(candidate_name: str, full_name: str) -> bool:
+    """First and last name both match (ignoring middle names, credentials, nicknames)."""
+    a, b = _name_tokens(candidate_name), _name_tokens(full_name)
+    if len(a) < 2 or len(b) < 2:
+        return bool(a) and a == b
+    return a[0] == b[0] and a[-1] == b[-1]
+
+
+_INDUSTRY_WORDS = {"waste", "disposal", "sanitation", "sanitary", "recycling", "environmental",
+                   "hauling", "refuse", "resource", "resources", "recovery", "solutions",
+                   "trash", "garbage", "rolloff", "roll", "off", "dumpster", "dumpsters"}
+
+
+def company_words(company: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9]+", company.lower().replace("&", " "))
+            if w not in _COMPANY_STOPWORDS and len(w) > 1}
+
+
+def mentions_company(text: str, company: str) -> bool:
+    """True if the headline names the company (all of its distinctive words appear)."""
+    if "/" in company:  # "Texas Pride Disposal / TXP Environmental": either name counts
+        return any(mentions_company(text, part) for part in company.split("/") if part.strip())
+    want = company_words(company)
+    if not want:
+        return False
+    have = set(re.findall(r"[a-z0-9]+", text.lower().replace("&", " ")))
+    # "Pena's Disposal" must match on "pena", not on the industry word "disposal".
+    distinctive = want - _INDUSTRY_WORDS
+    return (distinctive or want) <= have
+
+
+def is_decision_maker(headline: str) -> bool:
+    return _has_any(headline, TITLE_KEYWORDS + (
+        "vp", "vice president", "director", "sales", "growth", "marketing", "cio",
+        "chief information", "it director", "regional president", "division president"))
+
+
 def scrape_search_page(page, url: str) -> list[Candidate]:
     from .browser import human_pause, is_checkpoint, NeedsLogin
 
